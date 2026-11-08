@@ -1,0 +1,247 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Offline AI for Competition-Law Reviews</title>
+<meta name="description" content="Case study: an offline desktop tool that ranks antitrust risk in WhatsApp and e-mail for a law team, with fine-tuned local LLMs, RAG over Competition Board decisions and evals first. By Mehmet Şener Türcan.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Schibsted+Grotesk:wght@600;700&family=Source+Sans+3:wght@400;600&family=Source+Serif+4:ital@0;1&family=IBM+Plex+Mono&display=swap" rel="stylesheet">
+<style>
+:root {
+  color-scheme: light;
+  --ink: #123C45; --hl: #FFE45E; --bg: #EEF1F1; --surface: #FFFFFF;
+  --text: #16222A; --muted: #5A6770; --border: #D6DDDF;
+  --good: #1C7650; --warn: #9A5700; --bad: #B3261E;
+  --bar: #123C45; --bar-ref: #9AA8AE; --track: #E3E8E9;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    color-scheme: dark;
+    --ink: #7FC3CF; --bg: #0F1719; --surface: #172226;
+    --text: #E6ECEE; --muted: #9AA8AE; --border: #2A383D;
+    --good: #5CC49A; --warn: #F0B45A; --bad: #F2837B;
+    --bar: #7FC3CF; --bar-ref: #5A6770; --track: #22303A;
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --ink: #7FC3CF; --bg: #0F1719; --surface: #172226;
+  --text: #E6ECEE; --muted: #9AA8AE; --border: #2A383D;
+  --good: #5CC49A; --warn: #F0B45A; --bad: #F2837B;
+  --bar: #7FC3CF; --bar-ref: #5A6770; --track: #22303A;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 17px/1.6 "Source Sans 3", system-ui, sans-serif; }
+.wrap { max-width: 980px; margin: 0 auto; padding: 0 16px; }
+h1, h2, h3 { font-family: "Schibsted Grotesk", system-ui, sans-serif; line-height: 1.2; margin: 0; color: var(--text); }
+h1 { font-size: clamp(30px, 5vw, 48px); letter-spacing: -0.5px; }
+h2 { font-size: 26px; margin-bottom: 14px; }
+h3 { font-size: 18px; margin-bottom: 6px; }
+p { margin: 0 0 12px; }
+a { color: var(--ink); }
+mark { background: var(--hl); color: #16222A; padding: 0 3px; border-radius: 2px; }
+.mono { font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 0.88em; }
+header { padding: 56px 0 28px; }
+.kicker { font-family: "IBM Plex Mono", monospace; font-size: 13px; color: var(--muted); letter-spacing: .3px; margin-bottom: 14px; }
+.lede { font-size: 20px; color: var(--muted); max-width: 720px; margin-top: 16px; }
+.meta { display: flex; flex-wrap: wrap; gap: 8px 20px; margin-top: 20px; font-size: 15px; color: var(--muted); }
+.meta b { color: var(--text); font-weight: 600; }
+section { padding: 36px 0; border-top: 1px solid var(--border); }
+.shot { margin: 8px 0 0; }
+.shot img { width: 100%; height: auto; display: block; border-radius: 10px; border: 1px solid var(--border); box-shadow: 0 10px 30px rgba(18,60,69,.12); }
+.shot figcaption { font-size: 14px; color: var(--muted); margin-top: 8px; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin-top: 8px; }
+.stat { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 16px; }
+.stat .v { font-family: "Schibsted Grotesk", sans-serif; font-size: 34px; font-weight: 700; color: var(--ink); line-height: 1.1; }
+.stat .l { font-size: 14px; color: var(--muted); margin-top: 4px; }
+.cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 20px; }
+.pipe { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; counter-reset: s; margin-top: 6px; }
+.step { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px; position: relative; }
+.step::before { counter-increment: s; content: counter(s); font-family: "IBM Plex Mono", monospace; font-size: 12px; color: var(--muted); display: block; margin-bottom: 4px; }
+.step b { display: block; font-family: "Schibsted Grotesk", sans-serif; margin-bottom: 4px; }
+.step span { font-size: 14px; color: var(--muted); }
+.quote { font-family: "Source Serif 4", Georgia, serif; font-size: 19px; background: var(--surface); border-left: 3px solid var(--ink); padding: 14px 18px; border-radius: 0 10px 10px 0; margin: 14px 0; }
+.chart { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 18px; }
+.chart h3 { margin-bottom: 2px; }
+.chart .sub { font-size: 14px; color: var(--muted); margin-bottom: 14px; }
+.row { display: grid; grid-template-columns: minmax(120px, 210px) 1fr 52px; gap: 10px; align-items: center; margin: 10px 0; }
+.row .n { font-size: 15px; }
+.row .n small { display: block; color: var(--muted); font-size: 12.5px; }
+.row .t { height: 16px; background: var(--track); border-radius: 4px; position: relative; }
+.row .f { position: absolute; left: 0; top: 0; bottom: 0; background: var(--bar); border-radius: 4px; }
+.row .f.ref { background: var(--bar-ref); }
+.row .v { text-align: right; font-variant-numeric: tabular-nums; font-family: "IBM Plex Mono", monospace; font-size: 14px; }
+.legend { display: flex; gap: 16px; font-size: 13px; color: var(--muted); margin-top: 8px; flex-wrap: wrap; }
+.legend i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; vertical-align: -1px; margin-right: 5px; }
+table { width: 100%; border-collapse: collapse; font-size: 15px; }
+.tw { overflow-x: auto; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; margin-top: 16px; }
+th, td { padding: 10px 12px; border-bottom: 1px solid var(--border); text-align: left; white-space: nowrap; }
+th { font-size: 13px; color: var(--muted); font-weight: 600; }
+td.num { font-family: "IBM Plex Mono", monospace; font-size: 14px; }
+tr.me td { background: color-mix(in srgb, var(--hl) 22%, transparent); }
+ul.clean { padding-left: 20px; margin: 0; }
+ul.clean li { margin-bottom: 8px; }
+.tags { display: flex; flex-wrap: wrap; gap: 8px; }
+.tags span { background: var(--surface); border: 1px solid var(--border); border-radius: 999px; padding: 3px 12px; font-size: 14px; }
+footer { padding: 36px 0 56px; border-top: 1px solid var(--border); color: var(--muted); font-size: 15px; }
+.note { font-size: 14px; color: var(--muted); }
+#tip { position: fixed; pointer-events: none; background: var(--text); color: var(--bg); font-size: 13px; padding: 6px 10px; border-radius: 6px; opacity: 0; transition: opacity .1s; max-width: 260px; z-index: 5; }
+@media (max-width: 560px) { .row { grid-template-columns: 1fr 52px; } .row .n { grid-column: 1 / -1; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <div class="kicker">CASE STUDY · LEGAL AI · 2026</div>
+  <h1>Offline AI that reads thousands of messages so a competition lawyer reads the <mark>right</mark> ones.</h1>
+  <p class="lede">A desktop tool for a law team that ranks antitrust risk in employees' WhatsApp and e-mail, with the quote, the reasoning and similar Competition Board decisions next to every finding. Nothing leaves the lawyer's laptop.</p>
+  <div class="meta"><span><b>Role</b> sole engineer, with a practicing competition lawyer</span><span><b>Since</b> Sep 2026</span><span><b>Stack</b> Python · FastAPI · React · Electron · local LLMs</span></div>
+</header>
+
+<figure class="shot">
+  <img src="review.png" alt="Review screen: findings ranked by risk score, with the critical quote highlighted, the model's reasoning, and the surrounding messages." loading="eager">
+  <figcaption>Review screen on a synthetic demo case (fictional company and people). Each finding shows a risk score, category, the highlighted quote verified against the source message, the model's reasoning and the full conversation window. Interface in Turkish, the client's working language.</figcaption>
+</figure>
+
+<section>
+  <h2>The problem</h2>
+  <div class="cols">
+    <div>
+      <p>In a compliance audit or a dawn-raid preparation, a lawyer has to find the few messages that look like price fixing, market sharing, bid rigging or sensitive information exchange, inside tens of thousands of chats and e-mails.</p>
+      <p>Cloud AI is off the table: client data is privileged and can't leave the lawyer's machine. So the model has to run <b>locally</b>, on a laptop GPU, and still be good enough to trust.</p>
+    </div>
+    <div class="quote">"Ege tarafındaki zincirlere girmeyin demişler, biz de Karadeniz'e bakmayacağız."<br><span class="note" style="font-family:'Source Sans 3',sans-serif">"They said stay out of the Aegean chains, so we won't touch the Black Sea." A synthetic market-sharing message the tool flags at risk 90.</span></div>
+  </div>
+</section>
+
+<section>
+  <h2>Results on a frozen test set</h2>
+  <p>375 examples (339 from published Board decisions, 36 synthetic negatives), frozen before tuning so every round is measured against the same bar.</p>
+  <div class="stats">
+    <div class="stat"><div class="v">0.920</div><div class="l">AUC, best local model (Gemma 4 12B, round 10)</div></div>
+    <div class="stat"><div class="v">0.888</div><div class="l">accuracy at the review threshold chosen on validation</div></div>
+    <div class="stat"><div class="v">1.3 pts</div><div class="l">behind Claude Opus, fully offline</div></div>
+    <div class="stat"><div class="v">10</div><div class="l">measured fine-tuning rounds, one change each</div></div>
+  </div>
+
+  <div class="chart" style="margin-top:16px" id="auc">
+    <h3>AUC by model</h3>
+    <div class="sub">Higher is better. Same frozen 375-example test set.</div>
+  </div>
+
+  <div class="tw"><table>
+    <thead><tr><th>Model</th><th>Threshold</th><th>Accuracy</th><th>False alarms</th><th>Missed</th><th>Category acc.</th><th>AUC</th></tr></thead>
+    <tbody>
+      <tr><td>Gemma 4 12B, base (no tuning)</td><td class="num">50</td><td class="num">0.747</td><td class="num">10</td><td class="num">85</td><td class="num">0.46</td><td class="num">0.82</td></tr>
+      <tr><td>Round 8 · Qwen3-8B</td><td class="num">50</td><td class="num">0.800</td><td class="num">44</td><td class="num">31</td><td class="num">0.569</td><td class="num">0.797</td></tr>
+      <tr><td>Round 10 · Gemma 4 12B</td><td class="num">50</td><td class="num">0.835</td><td class="num">17</td><td class="num">45</td><td class="num">0.750</td><td class="num">0.920</td></tr>
+      <tr class="me"><td><b>Round 10 · Gemma 4 12B</b></td><td class="num">30 (val)</td><td class="num"><b>0.888</b></td><td class="num">32</td><td class="num"><b>10</b></td><td class="num">–</td><td class="num">–</td></tr>
+      <tr><td>Claude Opus (reference)</td><td class="num">50</td><td class="num">0.901</td><td class="num">18</td><td class="num">19</td><td class="num">0.863</td><td class="num">0.947</td></tr>
+    </tbody>
+  </table></div>
+  <p class="note" style="margin-top:8px">Threshold 30 was picked on the validation set, not the test set. It also matches the product's "needs review" band (30-79), so a lawyer sees borderline windows instead of losing them.</p>
+</section>
+
+<section>
+  <h2>How it works</h2>
+  <div class="pipe">
+    <div class="step"><b>Import</b><span>WhatsApp exports and iPhone backups, Gmail mbox, Outlook PST. SHA-256 per file, no duplicates.</span></div>
+    <div class="step"><b>Encrypted vault</b><span>One encrypted database per case, hash-chained audit log, secure delete on close.</span></div>
+    <div class="step"><b>Windows + pre-filter</b><span>Messages grouped into 4-hour windows, keyword and competitor watchlist pre-filter.</span></div>
+    <div class="step"><b>Local LLM + RAG</b><span>Fine-tuned model scores each window; the most similar Board decisions are retrieved as precedents.</span></div>
+    <div class="step"><b>Lawyer review</b><span>Ranked findings with quote, reasoning and context. Keyboard-first: R / I / V to decide.</span></div>
+    <div class="step"><b>Report</b><span>PDF with scope, methodology, findings, statistics and the audit-trail appendix.</span></div>
+  </div>
+  <figure class="shot" style="margin-top:20px">
+    <img src="analysis.png" alt="Case overview: 800 messages from 8 sources and 4 employees analysed in 217 windows, 12 high-risk findings." loading="lazy">
+    <figcaption>Case overview on the demo case: 800 messages, 8 sources, 217 analysis windows, 12 high-risk findings. Analysis is resumable if the app is closed.</figcaption>
+  </figure>
+</section>
+
+<section>
+  <h2>How the model got better</h2>
+  <div class="cols">
+    <div>
+      <h3>Data</h3>
+      <ul class="clean">
+        <li>Collected all <b>10,469</b> published Competition Board decisions (329M characters) as a Turkish competition-law corpus.</li>
+        <li>Extracted the real correspondence the Board treated as evidence, plus synthetic normal business chatter as negatives.</li>
+        <li>Built a <b>12,049-row</b> training set, including 8,674 windows labelled by Claude as a teacher model (distillation).</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Training</h3>
+      <ul class="clean">
+        <li>LoRA / QLoRA with Unsloth on Kaggle T4 and Modal A100 GPUs.</li>
+        <li>Models tried: Qwen3.5-4B, Qwen3-8B, Qwen3-14B, Gemma 4 12B.</li>
+        <li>Served locally through Ollama; bge-m3 embeddings for the precedent library.</li>
+      </ul>
+    </div>
+    <div>
+      <h3>Working with the lawyer</h3>
+      <ul class="clean">
+        <li>Five versions of a written rule set, reviewed line by line.</li>
+        <li>A 5-band risk scale and a keyword dictionary from the lawyer's revisions.</li>
+        <li>Error reviews after every round, sorted into "model wrong" and "label debatable".</li>
+      </ul>
+    </div>
+  </div>
+  <div class="quote" style="margin-top:20px">The biggest gains didn't come from bigger models. They came from fixing labels with the lawyer and changing one thing per round.</div>
+</section>
+
+<section>
+  <h2>Privacy by design</h2>
+  <ul class="clean">
+    <li>The back end listens only on <span class="mono">127.0.0.1</span>; the model endpoint must be loopback too.</li>
+    <li>The app window cancels every request that leaves the machine; a content security policy blocks external resources.</li>
+    <li>Every case database on disk is encrypted with a key derived from the lawyer's master password.</li>
+    <li>Closing a case writes the report, then deletes raw data and the case key.</li>
+    <li>Training used only public Board decisions and synthetic data. No client data was ever uploaded.</li>
+  </ul>
+</section>
+
+<section>
+  <h2>Stack</h2>
+  <div class="tags">
+    <span>Python</span><span>FastAPI</span><span>SQLCipher</span><span>Ollama</span><span>Qwen3</span><span>Gemma 4</span><span>Unsloth LoRA / QLoRA</span><span>Kaggle · Modal GPUs</span><span>bge-m3 RAG</span><span>Claude (teacher labels, baseline)</span><span>React</span><span>Electron</span><span>pytest · vitest</span>
+  </div>
+</section>
+
+<footer>
+  <p><b style="color:var(--text)">Mehmet Şener Türcan</b> · full-stack and applied AI engineer · Türkiye<br>
+  <a href="https://github.com/jantecreative">github.com/jantecreative</a> · <a href="https://jantecreative.com">jantecreative.com</a> · <a href="https://jantecreative.github.io/gozcu-site/">Gozco</a> · <a href="mailto:ttmehmet.sener@gmail.com">ttmehmet.sener@gmail.com</a></p>
+  <p class="note">Client project. Screenshots use a synthetic demo case; no client data is shown. Source code is private; a code walkthrough is available on request.</p>
+</footer>
+</div>
+<div id="tip" role="tooltip"></div>
+<script>
+const data = [
+  ["Gemma 4 12B", "base, no tuning", 0.82, false],
+  ["Qwen3-8B", "round 8", 0.797, false],
+  ["Gemma 4 12B", "round 10, fine-tuned", 0.920, false],
+  ["Claude Opus", "cloud reference", 0.947, true],
+];
+const el = document.getElementById("auc");
+const lo = 0.5, hi = 1.0;
+data.forEach(([n, s, v, ref]) => {
+  const r = document.createElement("div"); r.className = "row";
+  r.dataset.tip = `${n} (${s}): AUC ${v.toFixed(3)}`;
+  r.innerHTML = `<div class="n">${n}<small>${s}</small></div><div class="t"><div class="f${ref ? " ref" : ""}" style="width:${((v - lo) / (hi - lo) * 100).toFixed(1)}%"></div></div><div class="v">${v.toFixed(3)}</div>`;
+  el.appendChild(r);
+});
+const lg = document.createElement("div"); lg.className = "legend";
+lg.innerHTML = `<span><i style="background:var(--bar)"></i>Local model (offline)</span><span><i style="background:var(--bar-ref)"></i>Cloud reference</span><span>Axis starts at 0.5 (chance level)</span>`;
+el.appendChild(lg);
+const tip = document.getElementById("tip");
+document.addEventListener("mousemove", e => {
+  const t = e.target.closest("[data-tip]");
+  if (!t) { tip.style.opacity = 0; return; }
+  tip.textContent = t.dataset.tip; tip.style.opacity = 1;
+  tip.style.left = Math.min(e.clientX + 12, innerWidth - 270) + "px"; tip.style.top = (e.clientY + 14) + "px";
+});
+</script>
+</body>
+</html>
